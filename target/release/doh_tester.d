@@ -1,0 +1,1 @@
+W:\GitHub\doh_tester\ -\ Copy\target\release\doh_tester.exe: W:\GitHub\doh_tester\ -\ Copy\src\dns_utils.rs W:\GitHub\doh_tester\ -\ Copy\src\doh.rs W:\GitHub\doh_tester\ -\ Copy\src\main.rs W:\GitHub\doh_tester\ -\ Copy\src\output.rs W:\GitHub\doh_tester\ -\ Copy\src\types.rs
