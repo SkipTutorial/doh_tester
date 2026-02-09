@@ -1,0 +1,18 @@
+{
+  "doh_file": "doh.txt",
+  "output_file": "",
+  "timeout": 8.0,
+  "workers": 20,
+  "attempts": 3,
+  "min_success": 2,
+  "remove_working_from_doh_file": false,
+  "working_only": false,
+  "json_output": false,
+  "show_headers": true,
+  "show_status": true,
+  "show_doh_url": true,
+  "show_host": true,
+  "show_doh_ip": true,
+  "show_target_ip": false,
+  "show_ping": true
+}

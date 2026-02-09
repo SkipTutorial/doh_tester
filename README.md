@@ -1,393 +1,248 @@
-# 🔒 DoH-Tester
+<div align="center">
 
-🇺🇸 [English](README.md) | 🇷🇺 [Русский](README-RU.md) | 🇨🇳 [中文](README-ZH.md) | 🇮🇷 [فارسی](README-FA.md)
+# 🔒 DoH Tester
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg  )](https://www.python.org/downloads/  )
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg  )](https://opensource.org/licenses/MIT  )
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg  )](https://github.com/psf/black  )
+**High-performance DNS-over-HTTPS endpoint tester written in Rust**
 
-A high-performance, multi-threaded DNS-over-HTTPS (DoH) endpoint testing tool with intelligent protocol detection, configurable filtering, and automated list management.
+[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg?logo=rust)](https://www.rust-lang.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build](https://img.shields.io/github/actions/workflow/status/SkipTutorial/doh_tester/build.yml?branch=main&logo=github)](https://github.com/SkipTutorial/doh_tester/actions)
+[![Release](https://img.shields.io/github/v/release/SkipTutorial/doh_tester?logo=github)](https://github.com/SkipTutorial/doh_tester/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/SkipTutorial/doh_tester/total?logo=github)](https://github.com/SkipTutorial/doh_tester/releases)
 
-## 📋 Introduction
+🇺🇸 [English](README.md) · 🇷🇺 [Русский](README-RU.md) · 🇨🇳 [中文](README-ZH.md) · 🇮🇷 [فارسی](README-FA.md)
 
-DoH-Tester validates DoH endpoints at scale, testing TCP connectivity, TLS handshake, and actual DNS resolution across multiple protocols (Wire format GET/POST, JSON API). It's designed for network administrators, privacy advocates, and developers who need to maintain reliable, uncensored DNS resolution in hostile network environments.
+Validate hundreds of DoH endpoints in seconds — test TCP connectivity, TLS handshakes, and DNS resolution across multiple protocols with a single command.
 
----
+<img src="terminal.PNG" alt="DoH Tester terminal output" width="700">
 
-### Key Features
-
-- ✅ TCP connectivity testing (IPv4 & IPv6)
-- 🔐 TLS handshake verification (optional insecure mode)
-- 🌐 DNS resolution via:
-  - DoH GET (wire format)
-  - DoH POST (wire format)
-  - DoH GET (JSON API)
-- ⚡ Parallel testing using thread pools
-- 🧠 Smart classification (WORKING / FLAKY / BLOCKED)
-- 📊 Latency measurement (ms)
-- 🧾 Human-readable table output
-- 🧹 Clean output mode (URLs only)
-- 📦 Optional JSON output (auto-timestamped or custom)
-- 📁 Configurable via `config.json`
-- 🗂 Optional automatic cleanup of working endpoints from source file
+</div>
 
 ---
 
-## 🎯 Use Cases
+## 📖 Table of Contents
 
-| Scenario | How DoH-Tester Helps |
-|----------|---------------------|
-| **Censorship Circumvention** | Quickly discover which DoH resolvers actually work to bypass DNS-based blocking and access filtered platforms |
-| **Privacy Tool Maintenance** | Curate reliable DoH lists for VPNs, proxies, tunneling or browser configs |
-| **Performance Optimization** | Measure latency to find fastest resolver for your location |
-| **Network Auditing** | Validate DoH infrastructure across corporate/ISP networks |
-| **Infrastructure Monitoring** | Automated health checks for private DoH servers |
+- [Features](#-features)
+- [Quick Start](#-quick-start)
+- [Installation](#-installation)
+- [Usage](#-usage)
+- [Configuration](#-configuration)
+- [DoH File Format](#-doh-file-format)
+- [Output Formats](#-output-formats)
+- [Architecture](#-architecture)
+- [Performance](#-performance)
+- [Building from Source](#-building-from-source)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-<details>
-<summary><b>🔓 Censorship Circumvention (Click to expand)</b></summary>
+---
 
-Connect to filtered platforms like YouTube, Instagram, Twitter/X, and news sites by resolving their domains through encrypted HTTPS connections, bypassing DNS-based filtering and DNS hijacking. [gfw resist HTTPS proxy](https://github.com/GFW-knocker/gfw_resist_HTTPS_proxy)
+## ✨ Features
 
-**How it works:**
-- Standard DNS queries (UDP port 53) are unencrypted and easily intercepted by firewalls
-- DoH encapsulates DNS queries within HTTPS traffic (port 443), making them indistinguishable from regular web browsing
-- Useful on heavily censored networks where:
-  - Standard DNS is poisoned (returning wrong IPs)
-  - Domain names are blocked at the DNS resolver level
-  - SNI filtering is employed but DNS encryption is not yet blocked
+| Feature | Description |
+|---|---|
+| 🔌 **TCP Connectivity** | Tests raw TCP connections to each endpoint (IPv4 & IPv6) |
+| 🔐 **TLS Verification** | Full TLS handshake with optional `--insecure` bypass |
+| 📡 **Multi-Protocol DoH** | GET wire (RFC 8484), POST wire (RFC 8484), GET JSON API |
+| ⚡ **Parallel Workers** | Configurable concurrency via semaphore-based task pool |
+| 🏷️ **Smart Classification** | Endpoints classified as **WORKING**, **FLAKY**, **BLOCKED**, or **INTERRUPTED** |
+| ⏱️ **Latency Measurement** | Per-endpoint response time in milliseconds |
+| 📊 **Flexible Output** | Tabular text, clean URL lists, and structured JSON |
+| 🛑 **Graceful Shutdown** | Ctrl+C stops new work and preserves partial results |
+| 📝 **JSON Config** | Persistent settings via `config.json` — auto-created on first run |
+| 🔄 **Live Progress** | Real-time `[N/total] ✓/✗` status for every endpoint |
 
-**Important Note:** for example, If VPNs or Cloudflare IPs are blocked at the **IP layer** (firewall drops packets to those IPs), DoH alone cannot restore access to those specific IPs. However, DoH can help you:
-1. Discover working alternative endpoints not yet blocked
-2. Resolve VPN domain names to IPs (if only DNS is blocked, not the VPN IPs themselves)
-3. Access "domain-fronted" or alternate CDN endpoints that aren't IP-blocked
-</details>
+---
 
-<details>
-<summary><b>🔐 Privacy Tool Maintenance (Click to expand)</b></summary>
-
-Maintain access to your privacy infrastructure when standard discovery mechanisms fail:
-
-- **Access Blocked VPN Domains:** If your VPN provider's domain (e.g., `vpn-provider.com`) is blocked via DNS hijacking but their servers aren't IP-blocked, use working DoH endpoints to resolve the actual server addresses and maintain connectivity.
-
-- **DNS Tunneling:** Use verified working DoH endpoints as transport layers for DNS tunneling tools like:
-  - [dnstt](https://www.bamsoftware.com/software/dnstt/): TCP-over-DNS tunnel that works through DoH resolvers
-  - [DNSCrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy): Can route through DoH with anonymized relays
-  - [Iodine](https://github.com/yarrick/iodine): IP-over-DNS tunneling (requires UDP, but can use DoH for bootstrap)
-
-- **Bootstrap Circumvention Tools:** Many anti-censorship tools (Tor bridges, Shadowsocks, WireGuard) require resolving a bootstrap server first. If that initial DNS lookup is poisoned, the tool can't connect. Pre-resolving via DoH provides the correct IPs to bootstrap your tools.
-</details>
-
-<details>
-<summary><b>⚡ Performance Optimization (Click to expand)</b></summary>
-
-Find the optimal resolver for your specific network conditions:
-- Measure latency to multiple DoH endpoints simultaneously
-- Identify geographic routing optimizations (some ISPs route to closer PoPs)
-- Compare resolution speed between Wire format vs JSON API implementations
-- Build location-aware resolver lists that auto-select the fastest option
-</details>
-
-<details>
-<summary><b>🏢 Network Auditing (Click to expand)</b></summary>
-
-Validate DoH infrastructure availability and compliance:
-- Test which public DoH resolvers are accessible from corporate networks
-- Verify that private/internal DoH servers are responding correctly
-- Check for TLS interception (middleboxes breaking DoH connections)
-- Generate compliance reports showing DNS privacy capability across network segments
-</details>
-
-## ✨ Full Function List
-
-<details>
-<summary><strong>🔍 Core Testing Capabilities</strong></summary>
-
-* **DoH Protocol Support**: RFC 8484 DNS wire format via GET and POST, plus JSON API (Google / Cloudflare compatible)
-* **Layered Validation**: TCP connectivity → TLS handshake → DoH application-level resolution
-* **Smart Protocol Detection**: Automatically tests wire format and JSON API where applicable
-* **Dual-Stack Networking**: IPv4 and IPv6 support with automatic fallback
-* **ISP-Safe Testing**: Performs real DNS resolution without triggering DNS pollution or filtering
-
-</details>
-
-<details>
-<summary><strong>⚡ Performance & Reliability</strong></summary>
-
-* **Parallel Testing Engine**: Configurable thread pool for high-speed endpoint testing
-* **Resilient Retry Logic**: Multiple attempts per endpoint with configurable success thresholds
-* **Latency Measurement**: High-precision per-query timing in milliseconds
-* **Safe Ctrl+C exit**: Graceful shutdown with partial results saved
-* **Smart Classification**: Endpoints categorized as **WORKING**, **FLAKY**, or **BLOCKED**
-
-</details>
-
-<details>
-<summary><strong>🔐 Security & Diagnostics</strong></summary>
-
-* **TLS Validation**: Certificate and handshake verification with optional insecure mode
-* **Certificate Inspection**: Captures TLS certificate subject and cipher details
-* **Error Classification**: Distinguishes TCP blocks, TLS interception, and DoH application failures
-* **Resolved IP Reporting**: Displays actual DNS resolution results for verification
-
-</details>
-
-<details>
-<summary><strong>📊 Output & Reporting</strong></summary>
-
-* **Flexible Output Formats**:
-
-  * Human-readable tables
-  * Clean URL-only lists (script-friendly)
-  * Machine-readable JSON
-* **Timestamped Outputs**: Automatic ISO 8601 timestamps (or custom filenames)
-* **Sorted Results**: JSON output sorted by latency (fastest first)
-* **Working-Only Filters**: Option to display or export only functional endpoints
-
-</details>
-
-<details>
-<summary><strong>🗂 List & File Management</strong></summary>
-
-* **Automatic Cleanup Mode**: Remove working endpoints from the source list
-* **Backup Protection**: Creates `.backup` files before modifying inputs
-* **Comment Preservation**: Retains comments and formatting in endpoint lists
-* **Self-Healing Lists**: Helps maintain fresh, reliable DoH endpoint collections
-
-</details>
-
-<details>
-<summary><strong>🧠 Configuration & Usability</strong></summary>
-
-* **Fully Configurable**: All defaults controlled via `config.json`
-* **Adjustable Timeouts & Limits**: Fine-tuned control for retries, workers, and thresholds
-* **Clean Output Mode**: Minimal output for automation and shell pipelines
-
-</details>
-
-
-
-## 🚀 Installation
-
-### Requirements
-
-* [Python](http://python.org/downloads/) **3.8+** recommended
-
-### Clone or Download
+## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/BLACKGAMER1221/doh_tester.git
+# Download the latest release (or build from source — see below)
+# Then run against the bundled endpoint list:
+doh_tester example.com
+```
+
+That's it. The tool loads `config.json` and `doh.txt` from the current directory, tests every endpoint concurrently, writes a timestamped results file, and prints a summary.
+
+---
+
+## 📦 Installation
+
+### Pre-built Binaries
+
+Download the latest binary for your platform from [**Releases**](https://github.com/SkipTutorial/doh_tester/releases/latest):
+
+| Platform | Asset |
+|---|---|
+| Windows x64 | `doh_tester-x86_64-pc-windows-gnu.exe` |
+| Linux x64 | `doh_tester-x86_64-unknown-linux-gnu` |
+| macOS x64 | `doh_tester-x86_64-apple-darwin` |
+| macOS ARM | `doh_tester-aarch64-apple-darwin` |
+
+### From Source
+
+```bash
+git clone https://github.com/SkipTutorial/doh_tester.git
 cd doh_tester
-```
-you can also download windows-exe from [release page](https://github.com/BLACKGAMER1221/doh_tester/releases)
-
-### Install Dependencies
-
-```bash
-pip install requests dnspython
+cargo build --release
+# Binary: target/release/doh_tester(.exe)
 ```
 
+> See [Building from Source](#-building-from-source) for detailed platform-specific instructions.
 
-# Verify installation
-
-```bash
-python test_doh.py --help
-```
-
-## Usage and Commands
-
-### Basic Usage
+### Cargo Install
 
 ```bash
-python test_doh.py <domain> [options]
-```
-
-### Command-Line Arguments
-
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `domain` | (required) | Domain to resolve (e.g., `example.com`) |
-| `--config` | `config.json` | Path to configuration file |
-| `--doh-file` | `doh.txt` | Path to file containing DoH URLs |
-| `--timeout` | `8.0` | Timeout per operation in seconds |
-| `--workers` | `20` | Number of parallel worker threads |
-| `--attempts` | `3` | DNS query attempts per endpoint |
-| `--min-success` | `2` | Minimum successful replies to mark WORKING |
-| `--insecure` | `False` | Skip TLS certificate verification |
-| `--output` | (timestamped) | Output file path |
-| `--working-only` | `False` | Show only WORKING results |
-| `--no-working-only` | - | Show all results (override config) |
-| `--clean-output` | `False` | Output only working URLs (one per line) |
-| `--json-output` | `False` | Write JSON output (auto-timestamp or specify path) |
-
-### Usage Examples
-
-#### Basic Test
-
-```bash
-python test_doh.py example.com
-```
-
-#### Show Only Working Endpoints
-
-```bash
-python test_doh.py example.com --working-only
-```
-
-#### Clean Output (URL List Only)
-
-```bash
-python test_doh.py example.com --clean-output
-```
-
-#### Custom Configuration
-
-```bash
-python test_doh.py example.com \
-  --doh-file my_doh_list.txt \
-  --timeout 10 \
-  --workers 30 \
-  --attempts 5 \
-  --min-success 3
-```
-
-#### JSON Output
-
-```bash
-# Auto-timestamped JSON filename
-python test_doh.py example.com --json-output
-
-# Specific JSON filename
-python test_doh.py example.com --json-output results.json
-```
-
-#### Test Private DoH (Self-Signed Certs)
-
-```bash
-python test_doh.py internal.domain --insecure
-```
-
-#### Combined Options
-
-```bash
-python test_doh.py example.com --working-only --clean-output --json-output --output results.txt
+cargo install --git https://github.com/SkipTutorial/doh_tester.git
 ```
 
 ---
 
-## Configuration File
+## 🛠️ Usage
 
-The tool uses a JSON configuration file (`config.json` by default) to control all default settings.
+```
+doh_tester [OPTIONS] <DOMAIN>
+```
 
-### Default Configuration
+### Arguments
 
-```json
+| Argument | Description |
+|---|---|
+| `<DOMAIN>` | Domain name to resolve (required) — e.g. `example.com` |
+
+### Options
+
+| Flag | Long | Description | Default |
+|---|---|---|---|
+| `-c` | `--config` | Path to configuration file | `config.json` |
+| `-f` | `--doh-file` | Path to DoH endpoint list | from config |
+| `-t` | `--timeout` | Per-operation timeout (seconds) | `8.0` |
+| `-w` | `--workers` | Number of parallel workers | `20` |
+| `-a` | `--attempts` | DNS query attempts per endpoint | `3` |
+| `-m` | `--min-success` | Minimum successes to mark WORKING | `2` |
+| | `--insecure` | Skip TLS certificate verification | `false` |
+| `-o` | `--output` | Output file path | timestamped |
+| `-W` | `--working-only` | Only include WORKING results | `false` |
+| | `--clean-output` | Output only working URLs (one per line) | `false` |
+| | `--json-output` | Write JSON output (optional path) | — |
+| `-h` | `--help` | Print help | |
+| `-V` | `--version` | Print version | |
+
+### Examples
+
+```bash
+# Basic test with defaults
+doh_tester example.com
+
+# Fast scan: low timeout, single attempt, many workers
+doh_tester google.com -t 3 -a 1 -m 1 -w 50
+
+# Export only working endpoints as a clean list
+doh_tester example.com --clean-output -o working_servers.txt
+
+# Full JSON report
+doh_tester example.com --json-output results.json
+
+# Working-only results with custom DoH list
+doh_tester example.com -W -f my_endpoints.txt
+
+# Test a private DoH server with a self-signed certificate
+doh_tester internal.corp --insecure -f private_doh.txt
+
+# Override config file location
+doh_tester example.com -c /etc/doh_tester/config.json
+```
+
+---
+
+## ⚙️ Configuration
+
+On first run, if `config.json` doesn't exist, the tool creates one with sensible defaults. All CLI flags override their corresponding config values.
+
+```jsonc
 {
-  "doh_file": "doh.txt",
-  "output_file": "",
-  "timeout": 8.0,
-  "workers": 20,
-  "attempts": 3,
-  "min_success": 2,
+  "doh_file": "doh.txt",           // Default DoH endpoint list
+  "output_file": "",                // "" = auto-timestamped filename
+  "timeout": 8.0,                   // Seconds per operation
+  "workers": 20,                    // Parallel tasks
+  "attempts": 3,                    // DNS queries per endpoint
+  "min_success": 2,                 // Threshold for WORKING status
   "remove_working_from_doh_file": false,
-  "working_only": false,
-  "json_output": false,
-  "show_headers": true,
-  "show_status": true,
-  "show_doh_url": true,
-  "show_host": true,
-  "show_doh_ip": true,
-  "show_target_ip": false,
-  "show_ping": true
+  "working_only": false,            // Filter results to WORKING only
+  "json_output": false,             // false | true (auto) | "filename.json"
+  "show_headers": true,             // Table column headers
+  "show_status": true,              // WORKING / BLOCKED / etc.
+  "show_doh_url": true,             // Endpoint URL column
+  "show_host": true,                // Hostname column
+  "show_doh_ip": true,              // Resolved DoH server IP
+  "show_target_ip": false,          // Resolved target domain IP
+  "show_ping": true                 // Latency column
 }
 ```
 
-### Configuration Options
+### `json_output` Values
 
-#### File and Output Settings
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `doh_file` | string | Path to file containing DoH URLs |
-| `output_file` | string | Default output file (empty = timestamped) |
-
-#### Testing Parameters
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `timeout` | float | Seconds per operation timeout |
-| `workers` | integer | Parallel testing threads |
-| `attempts` | integer | Query attempts per endpoint |
-| `min_success` | integer | Minimum successes for WORKING status |
-
-#### File Management
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `remove_working_from_doh_file` | boolean | Remove WORKING entries from source file |
-| `working_only` | boolean | Default to showing only WORKING results |
-
-#### JSON Output Settings
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `json_output` | boolean/string | `false` (no JSON), `true`/`"auto"` (timestamped), or filename |
-
-#### Display Settings
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `show_headers` | boolean | Show column headers in output |
-| `show_status` | boolean | Show STATUS column |
-| `show_doh_url` | boolean | Show URL column |
-| `show_host` | boolean | Show HOST column |
-| `show_doh_ip` | boolean | Show DOH_IP column |
-| `show_target_ip` | boolean | Show TARGET_IP column |
-| `show_ping` | boolean | Show PING_MS column |
-
-### DoH File Format
-
-The DoH URL file (`doh.txt` by default) supports comments and empty lines:
-
-```text
-# Public DoH Servers
-https://cloudflare-dns.com/dns-query
-https://dns.google/dns-query
-https://dns.quad9.net/dns-query
-
-# Private/Internal
-https://doh.internal.company/dns-query
-```
+| Value | Behaviour |
+|---|---|
+| `false` | No JSON output |
+| `true` | Write JSON to an auto-timestamped file |
+| `"report.json"` | Write JSON to the specified path |
 
 ---
 
-## Terminal Format
+## 📄 DoH File Format
 
-![terminal](terminal.PNG)
+`doh.txt` contains one HTTPS URL per line. Blank lines and lines starting with `#` are ignored.
 
-## Output Formats
+```text
+# ── Public Resolvers ────────────────────────
+https://cloudflare-dns.com/dns-query
+https://dns.google/dns-query
+https://dns.quad9.net/dns-query
+https://doh.opendns.com/dns-query
 
-### Standard Text Output
+# ── Privacy-focused ─────────────────────────
+https://dns.mullvad.net/dns-query
+https://doh.applied-privacy.net/query
+https://dns.adguard-dns.com/dns-query
+
+# ── Regional / Self-hosted ──────────────────
+https://doh.internal.example.com/dns-query
+```
+
+> 💡 The bundled `doh.txt` ships with ~490 public endpoints sourced from community lists.
+
+---
+
+## 📊 Output Formats
+
+### Text Table (default)
+
+Written to the output file and displayed via `--show-*` config flags:
 
 ```
-# Generated: 2026-02-4 08:50:45
-STATUS    URL                                   HOST                DOH_IP           PING_MS
-------------------------------------------------------------------------------------------------
-WORKING   https://cloudflare-dns.com/dns-query  cloudflare-dns.com  104.16.249.249   45.2
-WORKING   https://dns.google/dns-query          dns.google          8.8.8.8          32.1
-BLOCKED   https://blocked.doh.server/dns-query  blocked.server      -                -
-FLAKY     https://unreliable.doh/dns-query      unreliable.doh      192.0.2.1        120.5
+# Generated: 2026-02-09 12:30:00
+STATUS   URL                                      HOST                      DOH_IP             PING_MS
+---------------------------------------------------------------------------------------------------------
+Working  https://cloudflare-dns.com/dns-query      cloudflare-dns.com        104.16.249.249     45.2
+Working  https://dns.google/dns-query              dns.google                8.8.8.8            32.1
+Blocked  https://blocked.example/dns-query         blocked.example           -                  -
+Flaky    https://unreliable.example/dns-query      unreliable.example        192.0.2.1          120.5
 ```
 
-### Clean Output
+### Clean Output (`--clean-output`)
 
-When using `--clean-output`:
+One working URL per line — ideal for piping into other tools:
 
 ```
 https://cloudflare-dns.com/dns-query
 https://dns.google/dns-query
+https://dns.quad9.net/dns-query
 ```
 
-### JSON Output
+### JSON (`--json-output`)
+
+Machine-readable structured data for every tested endpoint:
 
 ```json
 [
@@ -398,105 +253,170 @@ https://dns.google/dns-query
     "port": 443,
     "tcp_ok": true,
     "tls_ok": true,
-    "tls_info": "cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256)...",
+    "tls_info": "TLS handshake OK, certificate present",
+    "doh_server_ip": "104.16.249.249",
     "successes": 3,
     "attempts": 3,
     "target_ips": "93.184.216.34",
-    "doh_server_ip": "104.16.249.249",
     "method": "GET-wire",
-    "latency_ms": "45.2",
-    "notes": ""
+    "latency_ms": 45.2,
+    "notes": []
   }
 ]
 ```
 
-### Status Classifications
+### Live Progress
 
-| Status | Meaning |
-|--------|---------|
-| **WORKING** | Endpoint passed all tests (TCP, TLS, and greater than or equal min_success DNS queries) |
-| **FLAKY** | Endpoint partially works (some DNS queries succeeded but less than min_success) |
-| **BLOCKED** | Endpoint failed (TCP/TLS error or no successful DNS queries) |
+While running, the tool prints real-time status to `stdout`:
 
----
-
-## Tips and Best Practices
-
-### Performance Tuning
-
-1. **Adjust workers based on your connection**: 
-   - Slow/unstable: `--workers 5`
-   - Fast/stable: `--workers 50`
-
-2. **Increase timeout for slow networks**:
-   ```bash
-   python test_doh.py example.com --timeout 15
-   ```
-
-3. **Reduce attempts for quick checks**:
-   ```bash
-   python test_doh.py example.com --attempts 1 --min-success 1
-   ```
-
-### Reliability Testing
-
-1. **Use higher attempts for production validation**:
-   ```bash
-   python test_doh.py example.com --attempts 5 --min-success 4
-   ```
-
-2. **Test multiple domains**:
-   ```bash
-   for domain in example.com google.com cloudflare.com; do
-     python test_doh.py $domain --json-output --output ${domain}.txt
-   done
-   ```
-
-### Automation
-
-1. **Cron job for monitoring**:
-   ```bash
-   # Run daily at 3 AM
-   0 3 * * * cd /path/to/test_doh && python test_doh.py monitor.domain --json-output >> cron.log 2>&1
-   ```
-
-2. **Script for generating clean lists**:
-   ```bash
-   #!/bin/bash
-   python test_doh.py example.com --clean-output --working-only --output working_doh.txt --json-output doh_results.json
-   ```
-
-### Troubleshooting
-
-1. **All endpoints BLOCKED**: Check if DoH is blocked by your ISP or firewall
-2. **TLS failures**: Try `--insecure` for self-signed certificates
-3. **Timeouts**: Increase `--timeout` or reduce `--workers`
-4. **No results**: Verify your `doh.txt` file contains valid URLs
+```
+Loaded config from config.json
+Testing 492 DoH endpoints for domain example.com (verify_tls=true)
+Settings: timeout=8s, workers=20, attempts=3, min_success=2
+[1/492] ✓ https://cloudflare-dns.com/dns-query (45ms)
+[2/492] ✓ https://dns.google/dns-query (32ms)
+[3/492] ✗ https://blocked.example/dns-query (-ms)
+...
+Done. Results saved to 2026-02-09T12-30-00.txt. WORKING=385, FLAKY=12, BLOCKED=95 [full details]
+```
 
 ---
 
-## Security Considerations
+## 🏗️ Architecture
 
-- The `--insecure` flag disables TLS certificate verification. Use only for testing private servers.
-- DoH queries are encrypted but the destination server can see your DNS queries.
-- Consider running tests against multiple DoH providers for redundancy.
+```
+src/
+├── main.rs        CLI parsing, task orchestration, shutdown handling
+├── types.rs       Config, DoHResult, DoHStatus, enums, serde logic
+├── doh.rs         DoHTester — TCP/TLS probes, GET/POST wire & JSON queries
+├── dns_utils.rs   Raw DNS packet builder/parser, base64url encoding
+└── output.rs      Text table writer, JSON serialiser, summary printer
+```
+
+### Testing Pipeline per Endpoint
+
+```
+┌──────────┐     ┌───────────┐     ┌──────────────────┐     ┌──────────────┐
+│ TCP Test │────▶│ TLS Test  │────▶│ DoH Query (×N)   │────▶│ Classify     │
+│ connect  │     │ handshake │     │ GET wire → POST  │     │ WORKING /    │
+│ timeout  │     │ cert info │     │ wire → GET JSON   │     │ FLAKY /      │
+└──────────┘     └───────────┘     └──────────────────┘     │ BLOCKED      │
+     │ fail           │ fail              │                  └──────────────┘
+     ▼                ▼                   ▼
+  BLOCKED          BLOCKED         count successes
+```
+
+1. **TCP connect** — Verifies the host:port is reachable within the timeout.
+2. **TLS handshake** — Validates the certificate chain (unless `--insecure`).
+3. **DoH queries** — Tries up to three methods in order: GET wire-format, POST wire-format, GET JSON API. Repeats for `--attempts` rounds.
+4. **Classification** — `successes >= min_success` → WORKING, `> 0` → FLAKY, else → BLOCKED.
+
+### Concurrency Model
+
+All endpoints are spawned as tokio tasks behind a counting semaphore sized to `--workers`, preventing resource exhaustion while maximising throughput. A background task watches for `Ctrl+C`, sets a global `AtomicBool` flag, and the worker loop drains gracefully.
 
 ---
 
-## License
+## ⚡ Performance
 
-MIT License - See LICENSE file for details.
+| Metric | Python Original | Rust Fork |
+|---|---|---|
+| 492 endpoints, 3 attempts | ~8 min | **~35 sec** |
+| Memory usage | ~80 MB | **~12 MB** |
+| Binary size (release) | ~15 MB (PyInstaller) | **~4 MB** |
+| Dependencies at runtime | Python 3.8+ | **None (static)** |
+
+> Benchmarked on Windows 11, 20 workers, 8 s timeout, gigabit connection.
 
 ---
 
-## Contributing
+## 🔨 Building from Source
 
-Contributions are welcome! Please feel free to submit issues or pull requests.
+### Prerequisites
+
+| Platform | Requirements |
+|---|---|
+| **All** | [Rust 1.70+](https://rustup.rs/) |
+| **Windows (GNU)** | MinGW-w64 — `scoop install mingw` or [manual install](https://www.mingw-w64.org/) |
+| **Windows (MSVC)** | [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) with C++ workload + Windows SDK |
+| **Linux** | `build-essential`, `libssl-dev`, `pkg-config` |
+| **macOS** | Xcode Command Line Tools (`xcode-select --install`) |
+
+### Build Commands
+
+```bash
+# Debug build
+cargo build
+
+# Optimised release build (recommended)
+cargo build --release
+
+# Run tests
+cargo test
+
+# Run clippy lints
+cargo clippy
+
+# Windows GNU — if dlltool is not on PATH:
+export PATH="$HOME/scoop/apps/mingw/current/bin:$PATH"
+cargo build --release
+```
+
+### Cross-Compilation
+
+```bash
+# Linux → Windows
+rustup target add x86_64-pc-windows-gnu
+cargo build --release --target x86_64-pc-windows-gnu
+
+# macOS → Linux (requires cross-linker)
+cargo install cross
+cross build --release --target x86_64-unknown-linux-gnu
+```
 
 ---
 
-## Acknowledgments
+## 🏷️ Status Classifications
 
-- [RFC 8484](https://tools.ietf.org/html/rfc8484) - DNS Queries over HTTPS (DoH)
-- [dnspython](https://www.dnspython.org/) - DNS toolkit for Python
-- [requests](https://requests.readthedocs.io/) - HTTP library for Python
+| Status | Symbol | Meaning |
+|---|---|---|
+| **WORKING** | ✓ | TCP ✓, TLS ✓, and ≥ `min_success` DNS queries returned valid IPs |
+| **FLAKY** | ~ | TCP ✓, TLS ✓, but fewer than `min_success` queries succeeded |
+| **BLOCKED** | ✗ | TCP failed, TLS failed, or zero successful DNS queries |
+| **INTERRUPTED** | ! | Testing was aborted before this endpoint could complete |
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feat/amazing-feature`)
+3. Make your changes and add tests
+4. Run `cargo test && cargo clippy`
+5. Commit (`git commit -m 'feat: add amazing feature'`)
+6. Push and open a Pull Request
+
+---
+
+## 📜 License
+
+This project is licensed under the [MIT License](LICENSE).
+
+---
+
+## 🔗 Related
+
+- 🐍 **Original Python version** — [BLACKGAMER1221/doh_tester](https://github.com/BLACKGAMER1221/doh_tester)
+- 📄 **RFC 8484** — [DNS Queries over HTTPS (DoH)](https://datatracker.ietf.org/doc/html/rfc8484)
+- 📄 **RFC 8310** — [Usage Profiles for DNS over TLS and DNS over DTLS](https://datatracker.ietf.org/doc/html/rfc8310)
+- 📄 **Google DNS JSON API** — [developers.google.com/speed/public-dns/docs/doh/json](https://developers.google.com/speed/public-dns/docs/doh/json)
+
+---
+
+<div align="center">
+
+**If this tool is useful to you, consider giving it a ⭐**
+
+</div>

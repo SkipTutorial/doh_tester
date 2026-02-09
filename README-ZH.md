@@ -185,10 +185,10 @@ DoH-Tester 可在大规模场景下验证 DoH 端点，测试 TCP 连通性、TL
 ### 克隆或下载
 
 ```bash
-git clone https://github.com/BLACKGAMER1221/doh_tester.git
+git clone https://github.com/SkipTutorial/doh_tester.git
 cd doh_tester
 ```
-你也可以从[发布页面](https://github.com/BLACKGAMER1221/doh_tester/releases)下载 Windows 可执行文件（.exe)
+你也可以从[发布页面](https://github.com/SkipTutorial/doh_tester/releases)下载 Windows 可执行文件（.exe)
 
 ### 安装依赖
 

@@ -184,10 +184,10 @@ DoH-Tester проверяет DoH‑эндпоинты в большом мас�
 ### Клонирование или загрузка
 
 ```bash
-git clone https://github.com/BLACKGAMER1221/doh_tester.git
+git clone https://github.com/SkipTutorial/doh_tester.git
 cd doh_tester
 ```
-Вы также можете скачать Windows-exe файл со [страницы релизов](https://github.com/BLACKGAMER1221/doh_tester/releases)
+Вы также можете скачать Windows-exe файл со [страницы релизов](https://github.com/SkipTutorial/doh_tester/releases)
 
 ### Установка зависимостей
 

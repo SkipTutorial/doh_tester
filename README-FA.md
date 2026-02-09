@@ -181,11 +181,11 @@
 ### کلون یا دانلود
 
 ```bash
-git clone https://github.com/BLACKGAMER1221/doh_tester.git
+git clone https://github.com/SkipTutorial/doh_tester.git
 cd doh_tester
 ```
 
-همچنین میتوانید فایل مخصوص ویندوز را از [اینجا](https://github.com/BLACKGAMER1221/doh_tester/releases) دانلود کنید
+همچنین میتوانید فایل مخصوص ویندوز را از [اینجا](https://github.com/SkipTutorial/doh_tester/releases) دانلود کنید
 
 ### نصب وابستگی‌ها
 
