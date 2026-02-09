@@ -1,199 +1,34 @@
-name: CI
-
-on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
-
-env:
-  CARGO_TERM_COLOR: always
-  BINARY_NAME: doh_tester
-
-jobs:
-  # ────────────────────────────────────────────────────────────
-  # Lint & Format Check
-  # ────────────────────────────────────────────────────────────
-  lint:
-    name: Lint & Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Cache cargo registry & build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: lint-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: lint-${{ runner.os }}-cargo-
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-  # ────────────────────────────────────────────────────────────
-  # Test (matrix)
-  # ────────────────────────────────────────────────────────────
-  test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-          - os: macos-latest
-            target: x86_64-apple-darwin
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Cache cargo registry & build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: test-${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: test-${{ matrix.os }}-cargo-
-
-      - name: Run tests
-        run: cargo test --target ${{ matrix.target }} --verbose
-
-  # ────────────────────────────────────────────────────────────
-  # Build Release Binaries (matrix)
-  # ────────────────────────────────────────────────────────────
-  build:
-    name: Build (${{ matrix.target }})
-    needs: [lint, test]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact: doh_tester
-            archive: tar.gz
-
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact: doh_tester.exe
-            archive: zip
-
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact: doh_tester
-            archive: tar.gz
-
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact: doh_tester
-            archive: tar.gz
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Cache cargo registry & build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: build-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: build-${{ matrix.target }}-cargo-
-
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Prepare archive directory
-        shell: bash
-        run: |
-          STAGING="${{ env.BINARY_NAME }}-${{ matrix.target }}"
-          mkdir -p "$STAGING"
-          cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$STAGING/"
-          cp README.md LICENSE config.json doh.txt "$STAGING/" 2>/dev/null || true
-
-      - name: Create archive (tar.gz)
-        if: matrix.archive == 'tar.gz'
-        shell: bash
-        run: |
-          STAGING="${{ env.BINARY_NAME }}-${{ matrix.target }}"
-          tar czf "${STAGING}.tar.gz" "$STAGING"
-          echo "ASSET=${STAGING}.tar.gz" >> "$GITHUB_ENV"
-
-      - name: Create archive (zip)
-        if: matrix.archive == 'zip'
-        shell: bash
-        run: |
-          STAGING="${{ env.BINARY_NAME }}-${{ matrix.target }}"
-          7z a "${STAGING}.zip" "$STAGING"
-          echo "ASSET=${STAGING}.zip" >> "$GITHUB_ENV"
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.BINARY_NAME }}-${{ matrix.target }}
-          path: ${{ env.ASSET }}
-          retention-days: 7
-
-  # ────────────────────────────────────────────────────────────
-  # GitHub Release (only on version tags)
-  # ────────────────────────────────────────────────────────────
-  release:
-    name: Create Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: List artifacts
-        run: find artifacts -type f | sort
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          draft: false
-          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
-          files: |
-            artifacts/**/*.tar.gz
-            artifacts/**/*.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            - name: Rust Release binary
+  # You may pin to the exact commit or the version.
+  # uses: rust-build/rust-build.action@6febf1b0ed6499a46610b58ef9d810398e75f3c2
+  uses: rust-build/rust-build.action@v1.4.5
+  with:
+    # Output target
+    RUSTTARGET: 
+    # List of extra files to include in build
+    EXTRA_FILES: # optional
+    # Path to directory containing Cargo.toml (defaults to project root)
+    SRC_DIR: # optional
+    # List of archive types to publish the binaries with, default "zip", supports zip and all tar formats
+    ARCHIVE_TYPES: # optional
+    # Full name of archive to upload (you must specify file extension and change this if building multiple targets)
+    ARCHIVE_NAME: # optional
+    # Relative path of script to run before building
+    PRE_BUILD: # optional
+    # Relative path of script to run after building
+    POST_BUILD: # optional
+    # If set to "true", the resulting binary will be stripped and compressed by UPX. ("false" by default)
+    MINIFY: # optional
+    # The rust toolchain version to use (see https://rust-lang.github.io/rustup/concepts/toolchains.html#toolchain-specification)
+    TOOLCHAIN_VERSION: # optional
+    # What method to use to upload compiled binaries, supported values: (release, none), default: release
+    UPLOAD_MODE: # optional
+    # Whether to statically link dependencies
+    STATIC_LINKING: # optional
+    # Extra flags to give to cargo build (space separated)
+    EXTRA_COMMAND_FLAGS: # optional
+    # Extra features to enable for the build
+    EXTRA_FEATURES: # optional
+    # Features to enable for the build (implies --no-default-features)
+    FEATURES: # optional
+          
