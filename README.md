@@ -1,8 +1,10 @@
 <div align="center">
 
-# 🔒 DoH Tester
+# 🔒 DoH Tester [Rusty-Fork]
 
 **High-performance DNS-over-HTTPS endpoint tester written in Rust**
+
+**Huge Thanks to BLACKGAMER1221 Check out him Python🐍 version** → [BLACKGAMER1221/doh_tester](https://github.com/BLACKGAMER1221/doh_tester)
 
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg?logo=rust)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
