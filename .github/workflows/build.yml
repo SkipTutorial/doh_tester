@@ -204,7 +204,7 @@ jobs:
 
       - name: Build documentation
         env:
-          RUSTDOCFLAGS: "-D warnings"
+          RUSTDOCFLAGS: '-D warnings' 
         run: cargo doc --no-deps --all-features
 
   # =========================================================================
