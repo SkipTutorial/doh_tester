@@ -31,7 +31,7 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: [v*]
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -204,7 +204,7 @@ jobs:
 
       - name: Build documentation
         env:
-            RUSTDOCFLAGS: -D warnings
+          RUSTDOCFLAGS: "-D warnings"
         run: cargo doc --no-deps --all-features
 
   # =========================================================================
@@ -292,6 +292,14 @@ jobs:
             archive: zip
             install-deps: false
 
+          # --- macOS x86_64 (Intel, uses macos-13 runner) ----------------------
+          - name: macOS x86_64
+            os: macos-13 # last Intel-based macOS runner
+            target: x86_64-apple-darwin
+            artifact: doh_tester
+            archive: tar.gz
+            install-deps: false
+
           # --- macOS aarch64 (Apple Silicon) -----------------------------------
           - name: macOS aarch64
             os: macos-latest # macos-14+ runs on Apple Silicon natively
@@ -349,39 +357,36 @@ jobs:
         if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
-          STAGING="${{ env.BINARY_NAME }}-${{ matrix.target }}"
-          tar czf "${STAGING}.tar.gz" "${STAGING}"
-          echo "ASSET=${STAGING}.tar.gz" >> "$GITHUB_ENV"
+          tar czf "${{ env.STAGING }}.tar.gz" "${{ env.STAGING }}"
+          echo "ASSET=${{ env.STAGING }}.tar.gz" >> "$GITHUB_ENV"
 
       - name: Create zip archive
         if: matrix.archive == 'zip'
         shell: bash
         run: |
-          STAGING="${{ env.BINARY_NAME }}-${{ matrix.target }}"
-          7z a "${STAGING}.zip" "${STAGING}"
-          echo "ASSET=${STAGING}.zip" >> "$GITHUB_ENV"
+          7z a "${{ env.STAGING }}.zip" "${{ env.STAGING }}"
+          echo "ASSET=${{ env.STAGING }}.zip" >> "$GITHUB_ENV"
 
       - name: Generate SHA-256 checksum
         shell: bash
         run: |
-          ASSET="${{ env.BINARY_NAME }}-${{ matrix.target }}.${{ matrix.archive }}"
           # sha256sum is available on Linux and Windows (Git Bash) but NOT on
           # macOS runners, which ship shasum instead.  Fall back gracefully.
           if command -v sha256sum &>/dev/null; then
-            sha256sum "$ASSET" > "$ASSET.sha256"
+            sha256sum "${{ env.ASSET }}" > "${{ env.ASSET }}.sha256"
           else
-            shasum -a 256 "$ASSET" > "$ASSET.sha256"
+            shasum -a 256 "${{ env.ASSET }}" > "${{ env.ASSET }}.sha256"
           fi
           echo "--- checksum ---"
-          cat "$ASSET.sha256"
+          cat "${{ env.ASSET }}.sha256"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BINARY_NAME }}-${{ matrix.target }}
           path: |
-            ${{ env.BINARY_NAME }}-${{ matrix.target }}.${{ matrix.archive }}
-            ${{ env.BINARY_NAME }}-${{ matrix.target }}.${{ matrix.archive }}.sha256
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256
           retention-days: 7
           if-no-files-found: error
 
