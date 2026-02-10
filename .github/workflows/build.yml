@@ -1,5 +1,33 @@
+# =============================================================================
+#  CI / CD  --  doh_tester
+# =============================================================================
+#
+#  All third-party actions have been removed.  Only GitHub-owned actions
+#  (actions/*) are used.  Rust toolchain management is handled directly
+#  via rustup, and releases are created with the pre-installed gh CLI.
+#
+#  Jobs overview
+#  -------------
+#  1. lint          - rustfmt + clippy (Linux, cheapest runner)
+#  2. msrv          - verify minimum supported Rust version (1.70)
+#  3. audit         - cargo-audit for known CVEs in dependency tree
+#  4. doc           - verify rustdoc builds without warnings
+#  5. test          - unit / integration tests (Linux, Windows, macOS)
+#  6. build         - release binaries + archives (Linux, Windows, macOS x86+ARM)
+#  7. release       - GitHub Release with SHA-256 checksums (tag pushes only)
+#
+#  Free-tier notes
+#  ---------------
+#  - Public repos: unlimited minutes (all runners).
+#  - Private repos: 2 000 min/month Linux (1x), Windows (2x), macOS (10x).
+#  - Lint / MSRV / audit / doc run only on Linux to minimise cost.
+#  - Concurrency groups cancel superseded runs on the same branch.
+
 name: CI
 
+# ---------------------------------------------------------------------------
+# Triggers
+# ---------------------------------------------------------------------------
 on:
   push:
     branches: [main]
@@ -8,26 +36,52 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# ---------------------------------------------------------------------------
+# Concurrency  --  cancel in-flight runs for the same ref (branch / tag)
+# ---------------------------------------------------------------------------
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ---------------------------------------------------------------------------
+# Minimal default permissions  --  jobs opt-in to more where needed
+# ---------------------------------------------------------------------------
+permissions:
+  contents: read
+
+# ---------------------------------------------------------------------------
+# Shared environment
+# ---------------------------------------------------------------------------
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
   BINARY_NAME: doh_tester
+  RUST_BACKTRACE: short
 
 jobs:
-  # ────────────────────────────────────────────────────────────
-  # Lint & Format Check
-  # ────────────────────────────────────────────────────────────
+  # =========================================================================
+  #  Lint & Format
+  # =========================================================================
   lint:
     name: Lint & Format
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Install Rust stable with clippy and rustfmt
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup component add rustfmt clippy
 
-      - name: Cache cargo registry & build
+      - name: Install system dependencies (OpenSSL)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libssl-dev pkg-config
+
+      - name: Cache Cargo registry, git, and target
         uses: actions/cache@v4
         with:
           path: |
@@ -35,92 +89,235 @@ jobs:
             ~/.cargo/git
             target
           key: lint-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: lint-${{ runner.os }}-cargo-
+          restore-keys: |
+            lint-${{ runner.os }}-cargo-
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Run clippy
+      - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-  # ────────────────────────────────────────────────────────────
-  # Test (matrix)
-  # ────────────────────────────────────────────────────────────
-  test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-          - os: macos-latest
-            target: x86_64-apple-darwin
-
+  # =========================================================================
+  #  Minimum Supported Rust Version (MSRV)
+  # =========================================================================
+  msrv:
+    name: MSRV (1.70)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+      - name: Install Rust 1.70
+        run: |
+          rustup toolchain install 1.70 --profile minimal
+          rustup default 1.70
 
-      - name: Cache cargo registry & build
+      - name: Install system dependencies (OpenSSL)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libssl-dev pkg-config
+
+      - name: Cache Cargo registry, git, and target
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: test-${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: test-${{ matrix.os }}-cargo-
+          # Do NOT key on Cargo.lock here -- we delete it below so the hash
+          # would be meaningless and would always miss.
+          key: msrv-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            msrv-${{ runner.os }}-cargo-
 
-      - name: Run tests
-        run: cargo test --target ${{ matrix.target }} --verbose
+      # The committed Cargo.lock uses lockfile format v4 which requires
+      # Rust >= 1.78.  Cargo 1.70 cannot parse it and will hard-error.
+      # Deleting it lets the older Cargo regenerate a v3 lockfile and
+      # resolve dependencies from scratch -- this is the realistic path
+      # a user on Rust 1.70 would take when building from a fresh clone.
+      - name: Remove incompatible Cargo.lock (v4 needs Rust 1.78+)
+        run: rm -f Cargo.lock
 
-  # ────────────────────────────────────────────────────────────
-  # Build Release Binaries (matrix)
-  # ────────────────────────────────────────────────────────────
-  build:
-    name: Build (${{ matrix.target }})
-    needs: [lint, test]
+      - name: Generate fresh lockfile for Rust 1.70
+        run: cargo generate-lockfile
+
+      - name: Check compilation on MSRV
+        run: cargo check --all-targets
+
+  # =========================================================================
+  #  Security Audit
+  # =========================================================================
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Audit failures should not block the entire pipeline; they are advisory.
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run cargo audit
+        run: cargo audit
+
+  # =========================================================================
+  #  Documentation build
+  # =========================================================================
+  doc:
+    name: Rustdoc Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install system dependencies (OpenSSL)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libssl-dev pkg-config
+
+      - name: Cache Cargo registry, git, and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: doc-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            doc-${{ runner.os }}-cargo-
+
+      - name: Build documentation
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --all-features
+
+  # =========================================================================
+  #  Test matrix
+  # =========================================================================
+  test:
+    name: Test (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - name: Linux x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            install-deps: true
+
+          - name: Windows x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            install-deps: false
+
+          - name: macOS ARM
+            os: macos-latest # macos-14+ (Apple Silicon)
+            target: aarch64-apple-darwin
+            install-deps: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.target }}
+
+      # Linux needs OpenSSL headers for native-tls / openssl-sys
+      - name: Install system dependencies (OpenSSL)
+        if: matrix.install-deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libssl-dev pkg-config
+
+      - name: Cache Cargo registry, git, and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: test-${{ matrix.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            test-${{ matrix.os }}-${{ matrix.target }}-cargo-
+
+      - name: Run tests
+        run: cargo test --target ${{ matrix.target }} --verbose
+
+  # =========================================================================
+  #  Build release binaries (matrix)
+  # =========================================================================
+  build:
+    name: Build (${{ matrix.name }})
+    needs: [lint, test]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- Linux x86_64 ---------------------------------------------------
+          - name: Linux x86_64
+            os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: doh_tester
             archive: tar.gz
+            install-deps: true
 
-          - os: windows-latest
+          # --- Windows x86_64 (MSVC) ------------------------------------------
+          - name: Windows x86_64
+            os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: doh_tester.exe
             archive: zip
+            install-deps: false
 
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact: doh_tester
-            archive: tar.gz
-
-          - os: macos-latest
+          # --- macOS aarch64 (Apple Silicon) -----------------------------------
+          - name: macOS aarch64
+            os: macos-latest # macos-14+ runs on Apple Silicon natively
             target: aarch64-apple-darwin
             artifact: doh_tester
             archive: tar.gz
+            install-deps: false
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.target }}
 
-      - name: Cache cargo registry & build
+      # Linux: OpenSSL headers for native-tls / openssl-sys
+      - name: Install system dependencies (OpenSSL)
+        if: matrix.install-deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libssl-dev pkg-config
+
+      - name: Cache Cargo registry, git, and target
         uses: actions/cache@v4
         with:
           path: |
@@ -128,72 +325,169 @@ jobs:
             ~/.cargo/git
             target
           key: build-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: build-${{ matrix.target }}-cargo-
+          restore-keys: |
+            build-${{ matrix.target }}-cargo-
 
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Prepare archive directory
+      # -- Package the binary into an archive ----------------------------------
+
+      - name: Prepare staging directory
         shell: bash
         run: |
           STAGING="${{ env.BINARY_NAME }}-${{ matrix.target }}"
-          mkdir -p "$STAGING"
-          cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$STAGING/"
-          cp README.md LICENSE config.json doh.txt "$STAGING/" 2>/dev/null || true
+          mkdir -p "${STAGING}"
+          cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "${STAGING}/"
+          # Include useful project files when they exist
+          for f in README.md LICENSE CHANGELOG.md config.json doh.txt; do
+            [ -f "$f" ] && cp "$f" "${STAGING}/" || true
+          done
+          echo "STAGING=${STAGING}" >> "$GITHUB_ENV"
 
-      - name: Create archive (tar.gz)
+      - name: Create tar.gz archive
         if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
           STAGING="${{ env.BINARY_NAME }}-${{ matrix.target }}"
-          tar czf "${STAGING}.tar.gz" "$STAGING"
+          tar czf "${STAGING}.tar.gz" "${STAGING}"
           echo "ASSET=${STAGING}.tar.gz" >> "$GITHUB_ENV"
 
-      - name: Create archive (zip)
+      - name: Create zip archive
         if: matrix.archive == 'zip'
         shell: bash
         run: |
           STAGING="${{ env.BINARY_NAME }}-${{ matrix.target }}"
-          7z a "${STAGING}.zip" "$STAGING"
+          7z a "${STAGING}.zip" "${STAGING}"
           echo "ASSET=${STAGING}.zip" >> "$GITHUB_ENV"
+
+      - name: Generate SHA-256 checksum
+        shell: bash
+        run: |
+          ASSET="${{ env.BINARY_NAME }}-${{ matrix.target }}.${{ matrix.archive }}"
+          # sha256sum is available on Linux and Windows (Git Bash) but NOT on
+          # macOS runners, which ship shasum instead.  Fall back gracefully.
+          if command -v sha256sum &>/dev/null; then
+            sha256sum "$ASSET" > "$ASSET.sha256"
+          else
+            shasum -a 256 "$ASSET" > "$ASSET.sha256"
+          fi
+          echo "--- checksum ---"
+          cat "$ASSET.sha256"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BINARY_NAME }}-${{ matrix.target }}
-          path: ${{ env.ASSET }}
+          path: |
+            ${{ env.BINARY_NAME }}-${{ matrix.target }}.${{ matrix.archive }}
+            ${{ env.BINARY_NAME }}-${{ matrix.target }}.${{ matrix.archive }}.sha256
           retention-days: 7
+          if-no-files-found: error
 
-  # ────────────────────────────────────────────────────────────
-  # GitHub Release (only on version tags)
-  # ────────────────────────────────────────────────────────────
+  # =========================================================================
+  #  GitHub Release  (only on "v*" tags)
+  #
+  #  Uses the pre-installed gh CLI instead of third-party actions.
+  # =========================================================================
   release:
     name: Create Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: List artifacts
+      - name: List downloaded artifacts
         run: find artifacts -type f | sort
 
+      # Collect every individual .sha256 file into a single manifest
+      - name: Assemble combined checksums file
+        shell: bash
+        run: |
+          echo "# SHA-256 checksums for ${{ github.ref_name }}" > SHA256SUMS.txt
+          echo "# Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> SHA256SUMS.txt
+          echo "" >> SHA256SUMS.txt
+          find artifacts -name '*.sha256' -exec cat {} + >> SHA256SUMS.txt
+          echo ""
+          echo "=== SHA256SUMS.txt ==="
+          cat SHA256SUMS.txt
+
+      - name: Extract release notes from CHANGELOG
+        id: changelog
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          NOTES=""
+          # Try to extract the section for this version from CHANGELOG.md
+          if [ -f CHANGELOG.md ]; then
+            # Match from "## [<version>]" or "## <version>" to the next "## " heading
+            NOTES=$(awk -v ver="$VERSION" '
+              /^## / {
+                if (found) exit
+                if (index($0, ver)) { found=1; next }
+              }
+              found { print }
+            ' CHANGELOG.md)
+          fi
+          # Write the notes to a file (avoids shell-quoting pitfalls with
+          # multiline strings in $GITHUB_OUTPUT).  The release step reads
+          # this file via --notes-file.
+          if [ -n "$NOTES" ]; then
+            printf '%s\n' "$NOTES" > release_notes.md
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          draft: false
-          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
-          files: |
-            artifacts/**/*.tar.gz
-            artifacts/**/*.zip
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+
+          # -- Build argument list ---------------------------------------------
+          RELEASE_ARGS=(
+            --title "Release ${TAG}"
+          )
+
+          # Prefer explicit changelog notes; fall back to auto-generated notes
+          if [ "${{ steps.changelog.outputs.has_notes }}" = "true" ]; then
+            RELEASE_ARGS+=(--notes-file release_notes.md)
+          else
+            RELEASE_ARGS+=(--generate-notes)
+          fi
+
+          # Mark pre-releases
+          if echo "$TAG" | grep -qE -- '-(rc|beta|alpha)'; then
+            RELEASE_ARGS+=(--prerelease)
+          fi
+
+          # -- Collect release assets ------------------------------------------
+          ASSETS=()
+          while IFS= read -r -d '' file; do
+            ASSETS+=("$file")
+          done < <(find artifacts -type f \( \
+            -name '*.tar.gz' -o \
+            -name '*.zip'    -o \
+            -name '*.sha256' \
+          \) -print0)
+          ASSETS+=("SHA256SUMS.txt")
+
+          echo "--- uploading ${#ASSETS[@]} assets ---"
+          printf '  %s\n' "${ASSETS[@]}"
+
+          # -- Create the release ----------------------------------------------
+          gh release create "$TAG" "${RELEASE_ARGS[@]}" "${ASSETS[@]}"
